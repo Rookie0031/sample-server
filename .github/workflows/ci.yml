@@ -1,4 +1,4 @@
-name: Node.js CI
+name: Node.js CI/CD
 
 on:
   push:
@@ -31,3 +31,50 @@ jobs:
       
     - name: Build
       run: npm run build
+
+  deploy:
+    needs: build
+    if: github.ref == 'refs/heads/master' # master 브랜치에 푸시된 경우에만 실행
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ secrets.AWS_REGION }}
+    
+    - name: Create SSH directory
+      run: mkdir -p ~/.ssh
+    
+    - name: Add SSH key
+      run: |
+        echo "${{ secrets.EC2_SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+    
+    - name: Add EC2 host to known_hosts
+      run: |
+        echo "${{ secrets.EC2_HOST_KEY }}" >> ~/.ssh/known_hosts
+    
+    - name: Deploy to EC2
+      env:
+        EC2_HOST: ${{ secrets.EC2_HOST }}
+        EC2_USERNAME: ${{ secrets.EC2_USERNAME }}
+      run: |
+        scp -i ~/.ssh/id_rsa -r \
+          dist \
+          package.json \
+          package-lock.json \
+          tsconfig.json \
+          tsconfig.build.json \
+          $EC2_USERNAME@$EC2_HOST:~/sample-server
+
+        ssh -i ~/.ssh/id_rsa $EC2_USERNAME@$EC2_HOST '
+          cd ~/sample-server
+          npm ci
+          pm2 stop sample-server || true
+          pm2 start dist/main.js --name sample-server
+        '
