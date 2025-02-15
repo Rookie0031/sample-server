@@ -10,11 +10,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     outputs:
-      version: ${{ steps.version.outputs.version }}  # 버전 정보를 출력으로 설정
-
-    strategy:
-      matrix:
-        node-version: [18.x, 20.x]
+      version: ${{ steps.version.outputs.version }}
 
     steps:
     - uses: actions/checkout@v4
@@ -24,10 +20,10 @@ jobs:
       run: |
         echo "version=$(date +'%Y%m%d_%H%M%S')-$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
     
-    - name: Use Node.js ${{ matrix.node-version }}
+    - name: Use Node.js
       uses: actions/setup-node@v4
       with:
-        node-version: ${{ matrix.node-version }}
+        node-version: '20.x'
         cache: 'npm'
     
     - name: Install dependencies
@@ -39,7 +35,7 @@ jobs:
     - name: Upload build artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: build-files-${{ matrix.node-version }}-${{ steps.version.outputs.version }}
+        name: build-files-${{ steps.version.outputs.version }}
         path: |
           dist
           package.json
@@ -48,7 +44,7 @@ jobs:
           tsconfig.build.json
 
   deploy:
-    needs: build  # build 작업의 출력값을 사용하기 위해 필요
+    needs: build
     if: github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     
@@ -56,7 +52,7 @@ jobs:
     - name: Download build artifacts
       uses: actions/download-artifact@v4
       with:
-        name: build-files-20.x-${{ needs.build.outputs.version }}
+        name: build-files-${{ needs.build.outputs.version }}
     
     - name: Create SSH directory
       run: mkdir -p ~/.ssh
