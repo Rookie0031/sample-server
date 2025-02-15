@@ -78,14 +78,14 @@ jobs:
         EC2_USERNAME: ${{ secrets.EC2_USERNAME }}
         VERSION: ${{ needs.build.outputs.version }}
       run: |
-        # 버전별 디렉토리와 current 디렉토리 생성
+        # 버전별 디렉토리 생성
         ssh -i ~/.ssh/id_rsa $EC2_USERNAME@$EC2_HOST "
           mkdir -p ~/deployments/$VERSION
           rm -rf ~/deployments/current
-          mkdir -p ~/deployments/current
+          ln -s ~/deployments/$VERSION ~/deployments/current
         "
         
-        # 버전 디렉토리와 current 디렉토리에 동시에 파일 복사
+        # 파일 복사
         scp -i ~/.ssh/id_rsa -r \
           dist \
           package.json \
@@ -93,23 +93,15 @@ jobs:
           tsconfig.json \
           tsconfig.build.json \
           $EC2_USERNAME@$EC2_HOST:~/deployments/$VERSION/
-
-        scp -i ~/.ssh/id_rsa -r \
-          dist \
-          package.json \
-          package-lock.json \
-          tsconfig.json \
-          tsconfig.build.json \
-          $EC2_USERNAME@$EC2_HOST:~/deployments/current/
         
-        # 버전 디렉토리에서 애플리케이션 실행
-        ssh -i ~/.ssh/id_rsa $EC2_USERNAME@$EC2_HOST '
+        # 애플리케이션 실행
+        ssh -i ~/.ssh/id_rsa $EC2_USERNAME@$EC2_HOST "
           cd ~/deployments/$VERSION
           npm ci
           pm2 stop sample-server || true
-          pm2 start dist/main.js --name sample-server
+          pm2 start ~/deployments/$VERSION/dist/main.js --name sample-server
           
           # 최근 5개 버전만 유지
           cd ~/deployments
           ls -t | grep -v current | tail -n +6 | xargs rm -rf
-        '
+        "
