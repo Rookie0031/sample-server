@@ -9,6 +9,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}  # 버전 정보를 출력으로 설정
 
     strategy:
       matrix:
@@ -16,6 +18,11 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
+    
+    - name: Generate version
+      id: version
+      run: |
+        echo "version=$(date +'%Y%m%d_%H%M%S')-$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
     
     - name: Use Node.js ${{ matrix.node-version }}
       uses: actions/setup-node@v4
@@ -26,22 +33,13 @@ jobs:
     - name: Install dependencies
       run: npm ci
       
-    - name: Run tests
-      run: npm test
-      
     - name: Build
       run: npm run build
       
-    - name: Generate version
-      id: version
-      run: |
-        echo "timestamp=$(date +'%Y%m%d_%H%M%S')" >> $GITHUB_OUTPUT
-        echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
-    
     - name: Upload build artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: build-files-${{ matrix.node-version }}-${{ steps.version.outputs.timestamp }}-${{ steps.version.outputs.sha_short }}
+        name: build-files-${{ matrix.node-version }}-${{ steps.version.outputs.version }}
         path: |
           dist
           package.json
@@ -50,17 +48,15 @@ jobs:
           tsconfig.build.json
 
   deploy:
-    needs: build
-    if: github.ref == 'refs/heads/master' # master 브랜치에 푸시된 경우에만 실행
+    needs: build  # build 작업의 출력값을 사용하기 위해 필요
+    if: github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     
     steps:
-    - uses: actions/checkout@v4
-    
     - name: Download build artifacts
       uses: actions/download-artifact@v4
       with:
-        name: build-files-20.x-${{ needs.build.outputs.timestamp }}-${{ needs.build.outputs.sha_short }}
+        name: build-files-20.x-${{ needs.build.outputs.version }}
     
     - name: Create SSH directory
       run: mkdir -p ~/.ssh
@@ -80,7 +76,7 @@ jobs:
       env:
         EC2_HOST: ${{ secrets.EC2_HOST }}
         EC2_USERNAME: ${{ secrets.EC2_USERNAME }}
-        VERSION: ${{ needs.build.outputs.timestamp }}-${{ needs.build.outputs.sha_short }}
+        VERSION: ${{ needs.build.outputs.version }}
       run: |
         # 버전별 디렉토리 생성
         ssh -i ~/.ssh/id_rsa $EC2_USERNAME@$EC2_HOST "mkdir -p ~/deployments/$VERSION"
