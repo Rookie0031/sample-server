@@ -102,9 +102,9 @@ jobs:
           tsconfig.build.json \
           $EC2_USERNAME@$EC2_HOST:~/deployments/current/
         
-        # current 디렉토리에서 애플리케이션 실행
+        # 버전 디렉토리에서 애플리케이션 실행
         ssh -i ~/.ssh/id_rsa $EC2_USERNAME@$EC2_HOST '
-          cd ~/deployments/current
+          cd ~/deployments/$VERSION
           npm ci
           pm2 stop sample-server || true
           pm2 start dist/main.js --name sample-server
