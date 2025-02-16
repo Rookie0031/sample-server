@@ -99,5 +99,5 @@ jobs:
           docker pull ${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG} && \
           docker stop sample-server || true && \
           docker rm sample-server || true && \
-          docker run -d --name sample-server -p 3000:3000 ${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG} && \
+          docker run -d -p 3000:3000 --name sample-server ${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG} && \
           docker image prune -a -f"
