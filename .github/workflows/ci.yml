@@ -9,6 +9,8 @@ on:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ steps.version.outputs.version }}
 
     steps:
     - uses: actions/checkout@v4
@@ -16,7 +18,7 @@ jobs:
     - name: Generate version
       id: version
       run: |
-        echo "version=$(date +'%Y%m%d_%H%M%S')-$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+        echo "version=${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
     
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v4
@@ -81,7 +83,7 @@ jobs:
       env:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
-        IMAGE_TAG: ${{ steps.version.outputs.version }}
+        IMAGE_TAG: ${{ needs.build-and-push.outputs.image_tag }}
         EC2_HOST: ${{ secrets.EC2_HOST }}
         EC2_USERNAME: ${{ secrets.EC2_USERNAME }}
       run: |
