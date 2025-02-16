@@ -81,17 +81,23 @@ jobs:
       env:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         ECR_REPOSITORY: sample-server
-        IMAGE_TAG: ${{ needs.build-and-push.outputs.version }}
+        IMAGE_TAG: ${{ steps.version.outputs.version }}
         EC2_HOST: ${{ secrets.EC2_HOST }}
         EC2_USERNAME: ${{ secrets.EC2_USERNAME }}
       run: |
-        ssh -i ~/.ssh/id_rsa $EC2_USERNAME@$EC2_HOST "
-          aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | docker login --username AWS --password-stdin $ECR_REGISTRY
-          docker pull $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-          docker stop sample-server || true
-          docker rm sample-server || true
-          docker run -d --name sample-server -p 3000:3000 $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-          
-          # 이전 이미지 정리
-          docker image prune -a -f
-        "
+        # AWS 자격 증명 파일 생성 및 전송
+        ssh -i ~/.ssh/id_rsa $EC2_USERNAME@$EC2_HOST "mkdir -p ~/.aws"
+        echo "[default]
+        aws_access_key_id=${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws_secret_access_key=${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        region=${{ secrets.AWS_REGION }}" | ssh -i ~/.ssh/id_rsa $EC2_USERNAME@$EC2_HOST "cat > ~/.aws/credentials"
+        
+        # 도커 명령어 실행
+        ssh -i ~/.ssh/id_rsa $EC2_USERNAME@$EC2_HOST "\
+          source ~/.bashrc && \
+          aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | docker login --username AWS --password-stdin ${ECR_REGISTRY} && \
+          docker pull ${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG} && \
+          docker stop sample-server || true && \
+          docker rm sample-server || true && \
+          docker run -d --name sample-server -p 3000:3000 ${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG} && \
+          docker image prune -a -f"
