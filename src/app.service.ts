@@ -15,7 +15,7 @@ export class AppService {
   }
 
   getServerStatus(): object {
-    return {
+    return { 
       status: 'running',
       timestamp: new Date().toISOString(),
       version: '1.0.0'
