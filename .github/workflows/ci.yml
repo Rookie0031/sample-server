@@ -2,19 +2,13 @@ name: Node.js CI/CD
 
 on:
   push:
-    branches: [ master ]
+    branches: [ master, container ]
   pull_request:
     branches: [ master ]
 
 jobs:
-  build:
+  build-and-push:
     runs-on: ubuntu-latest
-    outputs:
-      version: ${{ steps.version.outputs.version }}  # 버전 정보를 출력으로 설정
-
-    strategy:
-      matrix:
-        node-version: [20.x]
 
     steps:
     - uses: actions/checkout@v4
@@ -24,39 +18,50 @@ jobs:
       run: |
         echo "version=$(date +'%Y%m%d_%H%M%S')-$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
     
-    - name: Use Node.js ${{ matrix.node-version }}
-      uses: actions/setup-node@v4
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
       with:
-        node-version: ${{ matrix.node-version }}
-        cache: 'npm'
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ secrets.AWS_REGION }}
     
-    - name: Install dependencies
-      run: npm ci
-      
-    - name: Build
-      run: npm run build
-      
-    - name: Upload build artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: build-files-${{ matrix.node-version }}-${{ steps.version.outputs.version }}
-        path: |
-          dist
-          package.json
-          package-lock.json
-          tsconfig.json
-          tsconfig.build.json 
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v2
+    
+    - name: Build and push Docker image 
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
+        IMAGE_TAG: ${{ steps.version.outputs.version }}
+      run: |
+        # buildx 설정
+        docker buildx create --name mybuilder --use
+        docker buildx inspect --bootstrap
+        
+        # 멀티 플랫폼 빌드 및 푸시
+        docker buildx build \
+          --platform linux/amd64,linux/arm64 \
+          -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG \
+          -t $ECR_REGISTRY/$ECR_REPOSITORY:latest \
+          --push .
 
   deploy:
-    needs: build  # build 작업의 출력값을 사용하기 위해 필요. 배포전에 CI가 성공적으로 되어야한다는 것을 선언! 
+    needs: build-and-push
     if: github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     
     steps:
-    - name: Download build artifacts
-      uses: actions/download-artifact@v4
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
       with:
-        name: build-files-20.x-${{ needs.build.outputs.version }}
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ secrets.AWS_REGION }}
+    
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v2
     
     - name: Create SSH directory
       run: mkdir -p ~/.ssh
@@ -74,34 +79,19 @@ jobs:
     
     - name: Deploy to EC2
       env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        ECR_REPOSITORY: sample-server
+        IMAGE_TAG: ${{ needs.build-and-push.outputs.version }}
         EC2_HOST: ${{ secrets.EC2_HOST }}
         EC2_USERNAME: ${{ secrets.EC2_USERNAME }}
-        VERSION: ${{ needs.build.outputs.version }}
       run: |
-        # 버전별 디렉토리 생성
         ssh -i ~/.ssh/id_rsa $EC2_USERNAME@$EC2_HOST "
-          mkdir -p ~/deployments/$VERSION
-          rm -rf ~/deployments/current
-          ln -s ~/deployments/$VERSION ~/deployments/current
-        "
-        
-        # 파일 복사
-        scp -i ~/.ssh/id_rsa -r \
-          dist \
-          package.json \
-          package-lock.json \
-          tsconfig.json \
-          tsconfig.build.json \
-          $EC2_USERNAME@$EC2_HOST:~/deployments/$VERSION/
-        
-        # 애플리케이션 실행
-        ssh -i ~/.ssh/id_rsa $EC2_USERNAME@$EC2_HOST "
-          cd ~/deployments/$VERSION
-          npm ci
-          pm2 stop sample-server || true
-          pm2 start ~/deployments/$VERSION/dist/main.js --name sample-server
+          aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | docker login --username AWS --password-stdin $ECR_REGISTRY
+          docker pull $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker stop sample-server || true
+          docker rm sample-server || true
+          docker run -d --name sample-server -p 3000:3000 $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
           
-          # 최근 5개 버전만 유지
-          cd ~/deployments
-          ls -t | grep -v current | tail -n +6 | xargs rm -rf
+          # 이전 이미지 정리
+          docker image prune -a -f
         "
