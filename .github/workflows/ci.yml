@@ -45,7 +45,7 @@ jobs:
           package.json
           package-lock.json
           tsconfig.json
-          tsconfig.build.json
+          tsconfig.build.json 
 
   deploy:
     needs: build  # build 작업의 출력값을 사용하기 위해 필요. 배포전에 CI가 성공적으로 되어야한다는 것을 선언! 
