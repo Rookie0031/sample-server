@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nestjs-app
+  labels:
+    app: nestjs-app
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: nestjs-app
+  template:
+    metadata:
+      labels:
+        app: nestjs-app
+    spec:
+      containers:
+      - name: nestjs-app
+        image: 231327016105.dkr.ecr.ap-northeast-2.amazonaws.com/sample-server:e33cede
+        # image: rookie0031/sample-server:v1
+        ports:
+        - containerPort: 3000
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nestjs-app-service
+spec:
+  selector:
+    app: nestjs-app
+  ports:
+  - port: 80
+    targetPort: 3000
+  type: LoadBalancer
